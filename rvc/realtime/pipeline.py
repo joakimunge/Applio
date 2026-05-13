@@ -24,6 +24,25 @@ class RealtimeVoiceConverter:
     A class for performing realtime voice conversion using the Retrieval-Based Voice Conversion (RVC) method.
     """
 
+    @staticmethod
+    def _convert_weight_norm_keys(state_dict):
+        """Convert old-style weight_norm keys (weight_g/weight_v) to new
+        parametrizations format (parametrizations.weight.original0/original1)."""
+        converted = {}
+        needs_conversion = False
+        for k, v in state_dict.items():
+            if k.endswith(".weight_g"):
+                new_key = k[: -len(".weight_g")] + ".parametrizations.weight.original0"
+                converted[new_key] = v
+                needs_conversion = True
+            elif k.endswith(".weight_v"):
+                new_key = k[: -len(".weight_v")] + ".parametrizations.weight.original1"
+                converted[new_key] = v
+                needs_conversion = True
+            else:
+                converted[k] = v
+        return converted if needs_conversion else state_dict
+
     def __init__(self, weight_root):
         """
         Initializes the RealtimeVoiceConverter with default configuration, and sets up models and parameters.
@@ -72,7 +91,9 @@ class RealtimeVoiceConverter:
                 vocoder=self.vocoder,
             )
 
-            self.net_g.load_state_dict(self.cpt["weight"], strict=False)
+            self.net_g.load_state_dict(
+                self._convert_weight_norm_keys(self.cpt["weight"]), strict=False
+            )
             strip_parametrizations(self.net_g)
             self.net_g = self.net_g.to(self.config.device).to(self.dtype)
             self.net_g.eval()
