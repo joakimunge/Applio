@@ -923,9 +923,9 @@ def train_tab():
                     }
                 else:
                     return {
-                        "choices": ["24000", "32000", "40000"],
+                        "choices": ["24000", "32000"],
                         "__type__": "update",
-                        "value": "40000",
+                        "value": "32000",
                     }
 
             def update_slider_visibility(noise_reduction):

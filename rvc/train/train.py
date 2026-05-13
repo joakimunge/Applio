@@ -44,26 +44,6 @@ import rvc.lib.zluda
 from rvc.lib.algorithm import commons
 from rvc.train.process.extract_model import extract_model
 
-
-def _convert_weight_norm_keys(state_dict):
-    """Convert old-style weight_norm keys (weight_g/weight_v) to new
-    parametrizations format (parametrizations.weight.original0/original1).
-    Returns a new dict if conversion was needed, otherwise the original."""
-    converted = {}
-    needs_conversion = False
-    for k, v in state_dict.items():
-        if k.endswith(".weight_g"):
-            new_key = k[: -len(".weight_g")] + ".parametrizations.weight.original0"
-            converted[new_key] = v
-            needs_conversion = True
-        elif k.endswith(".weight_v"):
-            new_key = k[: -len(".weight_v")] + ".parametrizations.weight.original1"
-            converted[new_key] = v
-            needs_conversion = True
-        else:
-            converted[k] = v
-    return converted if needs_conversion else state_dict
-
 # Parse command line arguments
 model_name = sys.argv[1]
 save_every_epoch = int(sys.argv[2])
@@ -91,6 +71,7 @@ bf16_adamw = False
 disc_version = "v2"
 
 if vocoder == "RefineGAN":
+    disc_version = "v3"
     multiscale_mel_loss = True
 
 current_dir = os.getcwd()
@@ -526,7 +507,6 @@ def run(
                 ckpt = torch.load(pretrainG, map_location="cpu", weights_only=True)[
                     "model"
                 ]
-                ckpt = _convert_weight_norm_keys(ckpt)
                 if hasattr(net_g, "module"):
                     net_g.module.load_state_dict(ckpt)
                 else:
@@ -546,7 +526,6 @@ def run(
                 ckpt = torch.load(pretrainD, map_location="cpu", weights_only=True)[
                     "model"
                 ]
-                ckpt = _convert_weight_norm_keys(ckpt)
                 if hasattr(net_d, "module"):
                     net_d.module.load_state_dict(ckpt)
                 else:
