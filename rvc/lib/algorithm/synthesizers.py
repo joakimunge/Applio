@@ -3,7 +3,7 @@ from typing import Optional
 from rvc.lib.algorithm.generators.hifigan_mrf import HiFiGANMRFGenerator
 from rvc.lib.algorithm.generators.hifigan_nsf import HiFiGANNSFGenerator
 from rvc.lib.algorithm.generators.hifigan import HiFiGANGenerator
-from rvc.lib.algorithm.generators.refinegan import RefineGANGenerator
+from rvc.lib.algorithm.generators.refinegan import RefineGANGenerator, RefineGANGeneratorV2
 from rvc.lib.algorithm.commons import slice_segments, rand_slice_segments
 from rvc.lib.algorithm.residuals import ResidualCouplingBlock
 from rvc.lib.algorithm.encoders import TextEncoder, PosteriorEncoder
@@ -100,6 +100,17 @@ class Synthesizer(torch.nn.Module):
                     sample_rate=sr,
                     downsample_rates=upsample_rates[::-1],
                     upsample_rates=upsample_rates,
+                    num_mels=inter_channels,
+                    gin_channels=gin_channels,
+                    upsample_initial_channel=upsample_initial_channel,
+                    checkpointing=checkpointing,
+                )
+            elif vocoder == "RefineGAN_v2":
+                self.dec = RefineGANGeneratorV2(
+                    sample_rate=sr,
+                    downsample_rates=upsample_rates[::-1],
+                    upsample_rates=upsample_rates,
+                    start_channels=16,
                     num_mels=inter_channels,
                     gin_channels=gin_channels,
                     upsample_initial_channel=upsample_initial_channel,

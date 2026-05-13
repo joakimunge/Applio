@@ -484,3 +484,147 @@ class RefineGANGenerator(nn.Module):
 
         for block in self.upsample_conv_blocks:
             block.remove_parametrizations()
+
+
+class RefineGANGeneratorV2(nn.Module):
+    """
+    Stock Applio RefineGAN generator (newer architecture).
+
+    Uses progressive downsampling with kernel=7 convolutions, no FIR filters,
+    and start_channels=16. Compatible with built-in Applio 24k/32k pretrains.
+    """
+
+    def __init__(
+        self,
+        *,
+        sample_rate: int = 44100,
+        downsample_rates: tuple[int] = (2, 2, 8, 8),
+        upsample_rates: tuple[int] = (8, 8, 2, 2),
+        leaky_relu_slope: float = 0.2,
+        num_mels: int = 128,
+        start_channels: int = 16,
+        gin_channels: int = 256,
+        checkpointing: bool = False,
+        upsample_initial_channel=512,
+    ):
+        super().__init__()
+        self.upsample_rates = upsample_rates
+        self.leaky_relu_slope = leaky_relu_slope
+        self.checkpointing = checkpointing
+
+        self.upp = np.prod(upsample_rates)
+        self.m_source = SineGenerator(sample_rate)
+
+        self.pre_conv = weight_norm(
+            nn.Conv1d(1, start_channels, 7, 1, padding=3)
+        )
+
+        channels = start_channels
+        size = self.upp
+        self.downsample_blocks = nn.ModuleList([])
+        self.df0 = []
+        for i, u in enumerate(upsample_rates):
+            new_size = int(size / upsample_rates[-i - 1])
+            self.df0.append([size, new_size])
+            size = new_size
+
+            new_channels = channels * 2
+            self.downsample_blocks.append(
+                weight_norm(nn.Conv1d(channels, new_channels, 7, 1, padding=3))
+            )
+            channels = new_channels
+
+        channels = upsample_initial_channel
+
+        self.mel_conv = weight_norm(
+            nn.Conv1d(num_mels, channels // 2, 7, 1, padding=3)
+        )
+
+        if gin_channels != 0:
+            self.cond = nn.Conv1d(256, channels // 2, 1)
+
+        self.upsample_blocks = nn.ModuleList([])
+        self.upsample_conv_blocks = nn.ModuleList([])
+
+        for rate in upsample_rates:
+            new_channels = channels // 2
+
+            self.upsample_blocks.append(nn.Upsample(scale_factor=rate, mode="linear"))
+
+            self.upsample_conv_blocks.append(
+                ParallelResBlock(
+                    in_channels=channels + channels // 4,
+                    out_channels=new_channels,
+                    kernel_sizes=(3, 7, 11),
+                    dilation=(1, 3, 5),
+                    leaky_relu_slope=leaky_relu_slope,
+                )
+            )
+
+            channels = new_channels
+
+        self.conv_post = weight_norm(
+            nn.Conv1d(channels, 1, 7, 1, padding=3, bias=False)
+        )
+
+    def forward(self, mel: torch.Tensor, f0: torch.Tensor, g: torch.Tensor = None):
+        import torchaudio
+
+        f0_size = mel.shape[-1]
+        f0 = F.interpolate(f0.unsqueeze(1), size=f0_size * self.upp, mode="linear")
+        har_source = self.m_source(f0.transpose(1, 2)).transpose(1, 2)
+        x = self.pre_conv(har_source)
+
+        downs = []
+        for block, (old_size, new_size) in zip(self.downsample_blocks, self.df0):
+            x = F.leaky_relu(x, self.leaky_relu_slope)
+            downs.append(x)
+            x = torchaudio.functional.resample(
+                x.contiguous(),
+                orig_freq=int(f0_size * old_size),
+                new_freq=int(f0_size * new_size),
+                lowpass_filter_width=64,
+                rolloff=0.9475937167399596,
+                resampling_method="sinc_interp_kaiser",
+                beta=14.769656459379492,
+            )
+            x = block(x)
+
+        mel = self.mel_conv(mel)
+        if g is not None:
+            mel = mel + self.cond(g)
+
+        x = torch.cat([mel, x], dim=1)
+
+        for ups, res, down in zip(
+            self.upsample_blocks,
+            self.upsample_conv_blocks,
+            reversed(downs),
+        ):
+            x = F.leaky_relu(x, self.leaky_relu_slope)
+
+            if self.training and self.checkpointing:
+                x = checkpoint(ups, x, use_reentrant=False)
+                x = torch.cat([x, down], dim=1)
+                x = checkpoint(res, x, use_reentrant=False)
+            else:
+                x = ups(x)
+                x = torch.cat([x, down], dim=1)
+                x = res(x)
+
+        x = F.leaky_relu(x, self.leaky_relu_slope)
+        x = self.conv_post(x)
+        x = torch.tanh(x)
+
+        return x
+
+    def remove_parametrizations(self):
+        remove_parametrizations(self.pre_conv)
+        remove_parametrizations(self.mel_conv)
+        remove_parametrizations(self.conv_post)
+
+        for block in self.downsample_blocks:
+            remove_parametrizations(block)
+
+        for block in self.upsample_conv_blocks:
+            block.remove_parametrizations()
