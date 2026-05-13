@@ -19,6 +19,9 @@ import logging
 
 logging.getLogger("faiss").setLevel(logging.WARNING)
 
+# Fix FAISS OpenMP deadlock on macOS — single-threaded search avoids semaphore hang
+faiss.omp_set_num_threads(1)
+
 FILTER_ORDER = 5
 CUTOFF_FREQUENCY = 48  # Hz
 SAMPLE_RATE = 16000  # Hz
@@ -207,6 +210,7 @@ class Pipeline:
         f0_autotune_strength: float = 1.0,
         proposed_pitch: bool = False,
         proposed_pitch_threshold: float = 155.0,
+        filter_radius: float = None,
     ):
         """
         Estimates the fundamental frequency (F0) of a given audio signal using various methods.
@@ -236,13 +240,13 @@ class Pipeline:
             model = RMVPE(
                 device=self.device, sample_rate=self.sample_rate, hop_size=self.window
             )
-            f0 = model.get_f0(x, filter_radius=0.03)
+            f0 = model.get_f0(x, filter_radius=filter_radius if filter_radius is not None else 0.03)
             del model
         elif f0_method == "fcpe":
             model = FCPE(
                 device=self.device, sample_rate=self.sample_rate, hop_size=self.window
             )
-            f0 = model.get_f0(x, p_len, filter_radius=0.006)
+            f0 = model.get_f0(x, p_len, filter_radius=filter_radius if filter_radius is not None else 0.006)
             del model
 
         # f0 adjustments
@@ -405,6 +409,7 @@ class Pipeline:
         f0_autotune_strength,
         proposed_pitch,
         proposed_pitch_threshold,
+        filter_radius=None,
     ):
         """
         The main pipeline function for performing voice conversion.
@@ -468,6 +473,7 @@ class Pipeline:
                 f0_autotune_strength,
                 proposed_pitch,
                 proposed_pitch_threshold,
+                filter_radius,
             )
             pitch = pitch[:p_len]
             pitchf = pitchf[:p_len]

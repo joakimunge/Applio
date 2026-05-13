@@ -24,7 +24,12 @@ def singleton(cls):
 @singleton
 class Config:
     def __init__(self):
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda:0"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         self.gpu_name = (
             torch.cuda.get_device_name(int(self.device.split(":")[-1]))
             if self.device.startswith("cuda")
@@ -36,8 +41,9 @@ class Config:
 
     def load_config_json(self):
         configs = {}
+        config_dir = os.path.join(os.path.dirname(__file__))
         for config_file in version_config_paths:
-            config_path = os.path.join("rvc", "configs", config_file)
+            config_path = os.path.join(config_dir, config_file)
             with open(config_path, "r", encoding="utf-8") as f:
                 configs[config_file] = json.load(f)
         return configs
@@ -45,6 +51,8 @@ class Config:
     def device_config(self):
         if self.device.startswith("cuda"):
             self.set_cuda_config()
+        elif self.device == "mps":
+            pass  # MPS doesn't need VRAM config
         else:
             self.device = "cpu"
 

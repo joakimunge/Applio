@@ -214,6 +214,7 @@ class VoiceConverter:
         sid: int = 0,
         proposed_pitch: bool = False,
         proposed_pitch_threshold: float = 155.0,
+        filter_radius: float = None,
         **kwargs,
     ):
         """
@@ -303,6 +304,7 @@ class VoiceConverter:
                 f0_autotune_strength=f0_autotune_strength,
                 proposed_pitch=proposed_pitch,
                 proposed_pitch_threshold=proposed_pitch_threshold,
+                filter_radius=filter_radius,
             )
             converted_chunks.append(audio_opt)
             if split_audio:
