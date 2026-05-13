@@ -91,7 +91,6 @@ bf16_adamw = False
 disc_version = "v2"
 
 if vocoder == "RefineGAN":
-    disc_version = "v3"
     multiscale_mel_loss = True
 
 current_dir = os.getcwd()
